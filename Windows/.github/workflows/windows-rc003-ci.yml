@@ -19,9 +19,10 @@ name: windows-rc003-ci
 # runner process, with no observable OS-wide effect asserted beyond the
 # call/listener itself succeeding. What this job never does, anywhere: pair
 # with, connect to, or control any real RC003 hardware; open any GUI window;
-# perform BLE discovery/pairing; route real audio; install/enable any audio
-# driver; or RUN the compiled installer .exe - runner-based CI has no RC003
-# device attached anyway, so real-device behavior remains a manual
+# perform BLE discovery/pairing; route real audio; or install/enable any audio
+# driver. It does run the compiled app installer in a disposable runner-local
+# directory, smoke-check that installed EXE, and uninstall it again; this
+# verifies package lifecycle only and still has no RC003 attached, so real-device behavior remains a manual
 # verification step (see this subtree's README.md "Known gaps" section).
 #
 # All gates below are required (XRBM-018: the Inno Setup compile step was
@@ -193,11 +194,10 @@ jobs:
 
       # XRBM-018: promoted from best-effort to a required gate - this
       # SOURCE-compiles the Inno Setup script into an installer .exe
-      # artifact and must pass like every other gate above. It still never
-      # runs or installs anything: ISCC.exe only compiles, and the
-      # resulting installer .exe is uploaded as unsigned CI evidence, never
-      # executed here or anywhere else in this task.
-      - name: Compile Inno Setup installer (required gate, never run/installed)
+      # artifact and must pass like every other gate above. ISCC.exe itself
+      # only compiles; the following isolated lifecycle step is the sole
+      # place CI executes the resulting installer.
+      - name: Compile Inno Setup installer (required gate)
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress
@@ -210,6 +210,46 @@ jobs:
           & $iscc installer\RemoteMicRC003Setup.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Installer lifecycle smoke (isolated install, run, uninstall)
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path dist/installer -Filter "RemoteMicRC003Setup-*-unsigned.exe" | Select-Object -First 1
+          if (-not $installer) {
+            Write-Error "compiled installer not found"
+            exit 1
+          }
+          $installRoot = Join-Path $env:RUNNER_TEMP "RemoteMicRC003-install-smoke"
+          if (Test-Path $installRoot) { Remove-Item $installRoot -Recurse -Force }
+
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList @(
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$installRoot"
+          ) -Wait -PassThru
+          if ($install.ExitCode -ne 0) {
+            Write-Error "installer smoke failed with exit code $($install.ExitCode)"
+            exit 1
+          }
+
+          $installedExe = Join-Path $installRoot "app\RemoteMicRC003.exe"
+          $uninstaller = Join-Path $installRoot "unins000.exe"
+          if (-not (Test-Path $installedExe) -or -not (Test-Path $uninstaller)) {
+            Write-Error "installer did not create the expected app/uninstaller layout"
+            exit 1
+          }
+          & $installedExe --dry-run
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @(
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
+          ) -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) {
+            Write-Error "uninstaller smoke failed with exit code $($uninstall.ExitCode)"
+            exit 1
+          }
+          if (Test-Path (Join-Path $installRoot "app")) {
+            Write-Error "installed application payload remained after uninstall"
+            exit 1
+          }
+
       - name: Package deterministic unsigned release directory (ZIP + installer + SHA256SUMS)
         shell: pwsh
         run: |
@@ -218,7 +258,8 @@ jobs:
           # number or GUID) plus a checksum manifest generated in sorted
           # order - not bit-for-bit reproducible-build byte equality, which
           # PyInstaller does not guarantee upstream. Never signed, never
-          # published, never installed here.
+          # published; the earlier lifecycle gate installed only into the
+          # disposable runner directory and removed it again.
           $issText = Get-Content -Raw installer\RemoteMicRC003Setup.iss
           $versionMatch = [regex]::Match($issText, '#define AppVersion "([^"]+)"')
           if (-not $versionMatch.Success) {

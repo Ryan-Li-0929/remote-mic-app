@@ -483,11 +483,13 @@ class WindowsCiWorkflowTests(unittest.TestCase):
         # not a directive.
         self.assertNotIn("continue-on-error", _strip_hash_comments(self.text))
 
-    def test_never_runs_the_compiled_installer(self):
+    def test_runs_installer_lifecycle_only_in_disposable_runner_directory(self):
         lower = self.text.lower()
-        self.assertNotIn("start-process", lower)
-        self.assertNotIn("/verysilent", lower)
-        self.assertNotIn("/silent", lower)
+        self.assertIn("$env:runner_temp", lower)
+        self.assertIn("/verysilent", lower)
+        self.assertIn("unins000.exe", lower)
+        self.assertIn("installed application payload remained after uninstall", lower)
+        self.assertNotIn("/tasks=", lower)
 
     def test_uses_current_supported_action_majors(self):
         # XRBM-022: upgrade from checkout@v4/setup-python@v5/upload-artifact@v4.
@@ -927,11 +929,11 @@ class WindowsCiWorkflowTests(unittest.TestCase):
         self.assertIn("sendinput", lower)
         self.assertIn("raw input", lower)
 
-    def test_disclosure_still_denies_real_hardware_and_installer_execution(self):
+    def test_disclosure_denies_hardware_but_describes_isolated_installer_smoke(self):
         lower = self.text.lower()
         self.assertIn("no rc003", lower)
-        self.assertIn("device attached", lower)
-        self.assertIn("run the compiled installer", lower)
+        self.assertIn("disposable runner-local", lower)
+        self.assertIn("uninstall it again", lower)
 
     def test_fetches_and_verifies_vb_cable_before_pyinstaller_build(self):
         # XRBM-031 In-scope item 8: a required gate, run BEFORE PyInstaller,
