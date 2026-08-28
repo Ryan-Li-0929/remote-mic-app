@@ -2,16 +2,26 @@
 
 ## Mission
 
-Deliver a usable RC003 Windows remote microphone from the existing validated behavior. The current two-day delivery track uses the existing Windows implementation as the product baseline. Do not start a C++ rewrite, WinUI migration, custom audio driver, or HID driver during this track.
+Deliver a usable RC003 Windows remote microphone from the existing validated behavior.
+
+The original short delivery track remains frozen as the user-mode baseline. A separate,
+user-approved full-product track may add Windows-only capabilities when it has its own
+branch, ADR, tests, rollback path, and release gate. The full-product track must not change
+the macOS source tree, bundle identity, update feed, package, or release workflow.
+
+Keep the current Python/PySide6 application as the product baseline. Do not start a C++ or
+WinUI rewrite. Do not create a custom audio driver while the distributable VB-CABLE Basic
+route remains viable. A device-specific RC003 HID filter may be developed only under the
+full-product ADR; it must never be installed as a class-wide keyboard filter and must never
+ship unsigned or require Windows test-signing mode in an end-user package.
 
 ## Read Before Editing
 
-1. `docs/ai_context/INDEX.md`
-2. `docs/ai_context/PROJECT_CONTEXT.md`
-3. `docs/ai_context/CURRENT_STATUS.md`
-4. `docs/ai_context/AI_HANDOVER.md`
-5. Relevant ADR, module documentation, and tests
-6. `git status --short`
+1. `README.md`
+2. `apps/windows/rc003/README.md`
+3. `CHANGELOG.md` and `apps/windows/rc003/CHANGELOG.md`
+4. Relevant tracked ADR, module documentation, and tests
+5. `git status --short`
 
 ## Mandatory Rules
 
@@ -22,7 +32,8 @@ Deliver a usable RC003 Windows remote microphone from the existing validated beh
 - Without a physical RC003, mark hardware validation `deferred`; never report it as passed.
 - Keep production audio buffers bounded. Do not perform blocking file or process operations in an audio callback.
 - New architecture or scope changes require an ADR.
-- Update `CURRENT_STATUS.md` and `AI_HANDOVER.md` before switching models.
+- Keep public status in the relevant changelog, test manual, and ADR. Do not reference
+  gitignored or untracked internal handover files from tracked instructions.
 - Installer releases must support in-place upgrade: keep the stable AppId and
   install location, stop the old app, replace only versioned program payload,
   preserve config/key mappings/statistics/logs, and leave one installed-app

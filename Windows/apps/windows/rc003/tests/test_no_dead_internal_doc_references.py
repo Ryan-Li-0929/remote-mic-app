@@ -1,6 +1,6 @@
 """Regression test (XRBM-022 In-scope item 9): no publicly shipped/tracked
-file may reference a path inside docs/tasks/, docs/reports/, docs/reviews/,
-or docs/releases/ - the repository root .gitignore intentionally excludes
+file may reference a path inside docs/ai_context/, docs/tasks/, docs/reports/,
+docs/reviews/, or docs/releases/ - the repository root .gitignore intentionally excludes
 those directories (they hold internal task books, implementation reports,
 and independent-review verdicts), so they never exist in a real public
 clone/checkout. A path pointing into one of them is a dead link for every
@@ -27,9 +27,17 @@ _REPO_ROOT = _RC003_ROOT.parents[2]
 # line, or prose that just names the directory) never matches - only an
 # actual dead reference to a specific file inside one of these directories
 # does.
-_DEAD_DOC_REFERENCE_RE = re.compile(r"docs/(?:tasks|reports|reviews|releases)/[A-Za-z0-9]")
+_DEAD_DOC_REFERENCE_RE = re.compile(
+    r"docs/(?:ai_context|tasks|reports|reviews|releases)/[A-Za-z0-9]"
+)
 
-_GITIGNORED_DOC_PREFIXES = ("docs/tasks/", "docs/reports/", "docs/reviews/", "docs/releases/")
+_GITIGNORED_DOC_PREFIXES = (
+    "docs/ai_context/",
+    "docs/tasks/",
+    "docs/reports/",
+    "docs/reviews/",
+    "docs/releases/",
+)
 
 
 def _public_tree_files():
@@ -69,7 +77,7 @@ class NoDeadInternalDocReferencesTests(unittest.TestCase):
             violations,
             [],
             "public/tracked tree references gitignored "
-            "docs/(tasks|reports|reviews|releases)/ paths that do not exist "
+            "docs/(ai_context|tasks|reports|reviews|releases)/ paths that do not exist "
             f"in a real clone: {violations}",
         )
 
