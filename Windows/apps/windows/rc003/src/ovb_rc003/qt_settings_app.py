@@ -726,15 +726,14 @@ def _load_qt_classes() -> dict:
                 self._config.get("retain_voice_audio", False)
             )
             self._voice_archive_sessions: List[dict] = []
-            try:
-                self._runtime_status_channel = runtime_status.RuntimeStatusChannel()
-            except Exception:
-                self._runtime_status_channel = None
+            # Open the named mapping only for the production settings
+            # window. Unit tests construct many controllers in one process;
+            # keeping OS handles/timers out of the constructor makes those
+            # controllers ordinary, deterministic QObject values.
+            self._runtime_status_channel = None
             self._runtime_status_timer = QTimer(self)
             self._runtime_status_timer.setInterval(50)
             self._runtime_status_timer.timeout.connect(self._refresh_voice_runtime_status)
-            if QCoreApplication.instance() is not None:
-                self._runtime_status_timer.start()
             self._refresh_voice_archive_sessions()
 
             self._endpoint_options: List[str] = []
@@ -1433,6 +1432,18 @@ def _load_qt_classes() -> dict:
                 self.keyDetectionActiveChanged.emit()
 
         @Slot()
+        def startRuntimeStatus(self) -> None:
+            if self._runtime_status_channel is not None:
+                return
+            try:
+                self._runtime_status_channel = runtime_status.RuntimeStatusChannel()
+            except Exception:
+                self._runtime_status_channel = None
+                return
+            if QCoreApplication.instance() is not None:
+                self._runtime_status_timer.start()
+
+        @Slot()
         def closeRuntimeStatus(self) -> None:
             self._runtime_status_timer.stop()
             channel = self._runtime_status_channel
@@ -2097,6 +2108,7 @@ def run_settings_window() -> int:
     # hook alone - exactly the insufficient-timing contract XRBM-035's own
     # red evidence already disproved once.
     try:
+        controller.startRuntimeStatus()
         # Exposed to QML as SINGLETONS (resolved through the type/import
         # system at document-compile time), not as engine.rootContext()
         # context properties: a root-context property is resolved
