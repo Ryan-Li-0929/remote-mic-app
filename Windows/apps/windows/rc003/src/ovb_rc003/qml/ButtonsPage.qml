@@ -112,6 +112,45 @@ Item {
                         font.pixelSize: tokens.fontSizeSmall
                     }
                 }
+                Rectangle {
+                    objectName: "voiceLevelCapsule"
+                    Layout.preferredWidth: 74
+                    Layout.preferredHeight: 28
+                    radius: 14
+                    color: SettingsController.voiceActive ? Qt.rgba(0.10, 0.49, 0.95, 0.12) : tokens.fieldBackground
+                    border.color: SettingsController.voiceActive ? tokens.accent : tokens.border
+                    border.width: 1
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 5
+                        Label {
+                            text: "●"
+                            color: SettingsController.voiceActive ? tokens.accent : tokens.textSecondary
+                            font.pixelSize: 8
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Rectangle {
+                            objectName: "voiceLevelTrack"
+                            width: 42
+                            height: 6
+                            radius: 3
+                            color: tokens.border
+                            anchors.verticalCenter: parent.verticalCenter
+                            Rectangle {
+                                objectName: "voiceLevelFill"
+                                width: parent.width * SettingsController.voiceLevel
+                                height: parent.height
+                                radius: 3
+                                color: tokens.accent
+                                Behavior on width { NumberAnimation { duration: 55 } }
+                            }
+                        }
+                    }
+                    ToolTip.visible: levelHover.hovered
+                    ToolTip.text: SettingsController.voiceActive ? qsTr("正在接收遥控器麦克风音频") : qsTr("遥控器麦克风音量")
+                    HoverHandler { id: levelHover }
+                }
                 Button {
                     id: detectRealKeyButton
                     objectName: "detectRealKeyButton"

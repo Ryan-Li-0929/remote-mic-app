@@ -212,6 +212,10 @@ class _AppWiringTestCase(unittest.TestCase):
             handler.close()
             logger.removeHandler(handler)
         logging_setup._configured = False
+        self.app._voice_audio_archive.close()
+        if self.app._runtime_status is not None:
+            self.app._runtime_status.close()
+            self.app._runtime_status = None
         self._tmp.cleanup()
         # XRBM-026: close the loop this test owns (see setUp()) and detach
         # it as the thread's current loop, so its own eventual __del__ finds
@@ -219,6 +223,33 @@ class _AppWiringTestCase(unittest.TestCase):
         # setUp() cannot mistake this now-closed loop for a live ambient one.
         asyncio.set_event_loop(None)
         self._loop.close()
+
+
+class VoiceRuntimeMeterWiringTests(_AppWiringTestCase):
+    def test_audio_lifecycle_publishes_live_level_and_resets_on_stop(self):
+        original = win32_input.send_voice_key_combo_tap
+        win32_input.send_voice_key_combo_tap = lambda tokens, _sender=None: None
+        try:
+            self.app._on_control_event(AudioStarted(session_id=1))
+            started = self.app._runtime_status.read()
+            self.assertTrue(started.active)
+            self.assertEqual(started.level, 0.0)
+
+            # Metering observes decoded microphone PCM independently of the
+            # playback sink, so UI observability cannot be mistaken for
+            # successful virtual-audio routing.
+            self.app._playback = None
+            self.app._on_pcm_frame([16_384] * 800)
+            speaking = self.app._runtime_status.read()
+            self.assertTrue(speaking.active)
+            self.assertGreater(speaking.level, 0.0)
+
+            self.app._on_control_event(AudioStopped())
+            stopped = self.app._runtime_status.read()
+            self.assertFalse(stopped.active)
+            self.assertEqual(stopped.level, 0.0)
+        finally:
+            win32_input.send_voice_key_combo_tap = original
 
 
 class HostHotkeyFailureSuppressesMicOpenTests(_AppWiringTestCase):

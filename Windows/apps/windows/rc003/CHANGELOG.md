@@ -1,10 +1,26 @@
 # Changelog — Remote Mic RC003 (Windows)
 
 本项目按“候选发布”打标签。内部构建版本号固定在
-`installer/RemoteMicRC003Setup.iss` 的 `AppVersion`（当前 `0.1.0-candidate`），
+`installer/RemoteMicRC003Setup.iss` 的 `AppVersion`（当前 `0.2.0-preview.1`），
 仓库级 tag 只作为发布编号，两者对应关系以每条发布说明为准。
 
 标签格式：`v<内部版本>-windows-rc003-candidate.<序号>`。
+
+## [0.2.0-preview.1] — 2026-08-28
+
+### 新增
+
+- 按键映射页加入不改变语音键配置区的迷你实时音量条；显示值直接来自 RC003 解码后
+  PCM 的 50 ms RMS 窗口，设置进程只读取跨进程的音量值，不接收音频内容。
+- “使用统计”页加入可选的原始语音临时留存：本地单声道 16 kHz WAV、默认关闭、
+  独立后台写盘、4 小时自动删除、手动全部删除与文件夹入口。
+- 增加 Windows 完整版自动/真机/发布三层验收清单。
+
+### 隔离与隐私
+
+- Windows 完整版在独立 worktree/分支开发，不修改 macOS 产品源文件或发布流程。
+- 音量状态通道不包含 PCM、转写、设备路径或蓝牙身份；临时录音即使元数据损坏也会
+  由文件时间兜底在 4 小时后删除。
 
 ## [0.1.0-candidate] — 2026-07-31
 

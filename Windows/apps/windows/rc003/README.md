@@ -66,7 +66,7 @@ prerelease，发布说明会写清楚它基于哪一次真实 Windows CI 运行�
 
 预发行版的仓库级 tag（例如 `v0.3.0-windows-rc003-candidate.1`）只是发布
 编号，和资产文件名里的内部构建版本号是两回事：当前内部构建版本号固定为
-`0.1.0-candidate`（来自安装器脚本
+`0.2.0-preview.1`（来自安装器脚本
 `installer/RemoteMicRC003Setup.iss` 的 `AppVersion`）。不要因为
 文件名里的版本号和 tag 不一致就怀疑下载错了文件，具体对应关系以该
 预发行版自己的发布说明为准。
@@ -309,6 +309,9 @@ AppId 和本地数据目录继续作为安装升级兼容标识保留。
 2. 桥接进程启动单实例保护，并由连接监督器负责 BLE 会话、Raw Input 监听和重连。服务/特征读取使用 `BluetoothCacheMode.UNCACHED`，避免陈旧缓存。
 3. 可选的 RC003 HID tap 在配对的 WUDFHost 内读取全部键盘 usage，把方向/OK/Home/Menu/TV/Power/返回/音量边沿送入同一映射层，并在独立 socket 线程上 arm，低层钩子零等待吞掉原生键后只注入一次动作；普通动作仍通过 SendInput，语音快捷键通过物理化的右 Alt 事件，随后启动/停止 ATVV 音频流。
 4. BLE 断开、Raw Input 路径失效、热键发送失败或音频写入失败时，相关资源会先关闭，再按策略重连；不会继续向失效音频端点写入数据。
+5. 按键页的迷你音量条读取 RC003 解码后 PCM 的实时 RMS，只传递音量数值；可选的
+   原始语音临时留存默认关闭，用户主动开启后以单声道 16 kHz WAV 保存在本机并在
+   会话结束 4 小时后自动删除。
 
 设备发现、音频端点和语音热键均采用“明确选择、失败即停止”的策略。程序不保存真实
 蓝牙地址、HID 路径或设备令牌，也不会为了让界面显示“已连接”而猜测设备状态。
@@ -444,8 +447,9 @@ Windows GitHub Actions 工作流位于 `.github/workflows/windows-rc003-ci.yml`�
 
 ## 隐私、许可证与来源
 
-本 Windows 客户端不把真实蓝牙地址、HID 路径或设备令牌写入配置。日志和配置只写入
-当前用户的 `%LOCALAPPDATA%\RemoteMic\RC003`，详见上面的安装/卸载说明。
+本 Windows 客户端不把真实蓝牙地址、HID 路径或设备令牌写入配置。日志、配置与用户
+主动开启的临时语音只写入当前用户的 `%LOCALAPPDATA%\RemoteMic\RC003`；临时语音
+位于 `voice-audio` 子目录并受 4 小时硬上限约束，详见上面的安装/卸载说明。
 
 代码按 GPL-3.0-only 发布。Windows 实现基于上游
 <https://github.com/nijez/open-voice-bridge> 的 GPL Windows RC003 实现，具体变更

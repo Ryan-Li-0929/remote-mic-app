@@ -101,6 +101,9 @@ def default_config() -> Dict[str, Any]:
         # values fall back to the 0.200 default so the debouncer cannot
         # silently regress.
         "voice_release_debounce_seconds": 0.200,
+        # Raw RC003 microphone audio is private and therefore opt-in. When
+        # enabled, the bridge stores local WAV sessions for at most 4 hours.
+        "retain_voice_audio": False,
     }
 
 

@@ -24,7 +24,7 @@
 
 #define AppName "Remote Mic · RC003"
 #define AppPublisher "Remote Mic contributors"
-#define AppVersion "0.1.0-candidate"
+#define AppVersion "0.2.0-preview.1"
 #define AppExeName "RemoteMicRC003.exe"
 #define AppFolder "RC003"
 #define AppPayloadDir "app"

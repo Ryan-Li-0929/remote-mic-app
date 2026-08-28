@@ -79,7 +79,10 @@ from . import (
     logging_setup,
     qianwen_physicalizer,
     raw_input_windows,
+    runtime_status,
     usage_statistics,
+    voice_audio_level,
+    voice_audio_archive,
     voice_controller,
     voice_edge_debouncer,
     win32_input,
@@ -173,6 +176,24 @@ class RC003App:
         self._direct_hid_tap_active = False
         self._playback: Optional[audio_playback.EndpointPlaybackSink] = None
         self._voice_pcm_stats = PcmStats()
+        self._voice_level_meter = voice_audio_level.VoiceAudioLevelMeter()
+        self._voice_audio_archive = voice_audio_archive.VoiceAudioArchive(
+            voice_audio_archive.archive_root(self._config_root),
+            enabled=bool(self._config.get("retain_voice_audio", False)),
+        )
+        try:
+            self._runtime_status: Optional[runtime_status.RuntimeStatusChannel] = (
+                runtime_status.RuntimeStatusChannel()
+            )
+            self._runtime_status.reset()
+        except Exception:
+            # The live meter is an observability aid, never a dependency of
+            # the BLE/audio/hotkey path.  A damaged/denied named mapping must
+            # therefore fail open for the bridge itself.
+            self._runtime_status = None
+            self._logger.exception(
+                "voice runtime status channel unavailable; bridge continues without UI meter"
+            )
 
         self._supervisor = connection_supervisor.ConnectionSupervisor(
             connect=self._connect_once,
@@ -232,6 +253,10 @@ class RC003App:
 
     async def stop(self) -> None:
         await self._supervisor.stop()
+        try:
+            self._voice_audio_archive.close()
+        except Exception:
+            self._logger.exception("cleanup: voice audio archive writer did not stop cleanly")
 
     async def _connect_once(self) -> None:
         self._logger.info("startup: resolving RC003 identity")
@@ -510,6 +535,8 @@ class RC003App:
         """
 
         failures: List[str] = []
+        self._reset_voice_runtime_status()
+        self._voice_audio_archive.stop()
 
         if self._hid_report_tap is not None:
             try:
@@ -1307,6 +1334,9 @@ class RC003App:
                     self._voice_physical_button_down = True
                 self._logger.info("voice audio started")
                 self._voice_pcm_stats.reset()
+                self._voice_level_meter.reset()
+                self._publish_voice_runtime_status(0.0, True)
+                self._voice_audio_archive.start(str(event.session_id))
                 self._voice_audio_start_fallback_pending = False
                 if not self._voice.active:
                     if (
@@ -1330,6 +1360,8 @@ class RC003App:
         elif isinstance(event, AudioStopped):
             with self._voice_trigger_lock:
                 self._logger.info("voice audio stopped")
+                self._reset_voice_runtime_status()
+                self._voice_audio_archive.stop()
                 stats = self._voice_pcm_stats.summary()
                 self._logger.info(
                     "voice PCM summary: frames=%s samples=%s audio_ms=%.0f "
@@ -1597,6 +1629,11 @@ class RC003App:
         safe to call cross-thread (see connection_supervisor.py).
         """
 
+        latest_level = self._voice_level_meter.append(samples)
+        self._voice_audio_archive.append(samples)
+        if latest_level is not None:
+            self._publish_voice_runtime_status(latest_level, True)
+
         if self._playback is None:
             return
         try:
@@ -1624,6 +1661,29 @@ class RC003App:
                 # self._playback is intentionally NOT cleared here: it may
                 # still own a live PortAudio stream.
             self._supervisor.request_reconnect()
+
+    def _publish_voice_runtime_status(self, level: float, active: bool) -> None:
+        channel = self._runtime_status
+        if channel is None:
+            return
+        try:
+            channel.publish(level, active)
+        except Exception:
+            # Disable only the optional status channel after its first
+            # failure.  Repeated PCM callbacks must not flood logs or disturb
+            # audio delivery.
+            self._runtime_status = None
+            self._logger.exception(
+                "voice runtime status publish failed; bridge continues without UI meter"
+            )
+            try:
+                channel.close()
+            except Exception:
+                self._logger.debug("closing failed runtime status channel failed", exc_info=True)
+
+    def _reset_voice_runtime_status(self) -> None:
+        self._voice_level_meter.reset()
+        self._publish_voice_runtime_status(0.0, False)
 
 
 async def _run(

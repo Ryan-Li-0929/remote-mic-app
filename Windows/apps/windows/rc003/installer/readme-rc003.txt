@@ -14,7 +14,7 @@ Xiaomi 蓝牙遥控器 2 Pro / RC003 已在 Windows 上完整实现或验收通�
   在点击"仍要运行"之前，建议先核对安装包（或便携版 ZIP）的 SHA-256 校验
   值是否与同一次构建产出的 SHA256SUMS.txt 一致。以 PowerShell 为例（把
   <文件名> 换成你实际下载的文件名，例如
-  RemoteMicRC003Setup-0.1.0-candidate-unsigned.exe）：
+  RemoteMicRC003Setup-0.2.0-preview.1-unsigned.exe）：
 
       Get-FileHash -Algorithm SHA256 .\<文件名>
 

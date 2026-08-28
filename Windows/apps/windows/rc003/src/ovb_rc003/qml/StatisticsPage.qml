@@ -32,9 +32,20 @@ Item {
         })
     }
 
+    Dialog {
+        id: clearArchiveDialog
+        title: qsTr("删除全部原始语音？")
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAccepted: SettingsController.clearVoiceArchive()
+        Label { text: qsTr("此操作无法撤销，但不会删除使用统计。") }
+    }
+
     onVisibleChanged: {
         if (visible) {
             UsageStatisticsController.refresh()
+            SettingsController.refreshVoiceArchive()
             alignCurrentMonth()
         }
     }
@@ -257,6 +268,95 @@ Item {
 
             Rectangle {
                 Layout.fillWidth: true
+                implicitHeight: archiveColumn.implicitHeight + tokens.spacingLarge * 2
+                radius: tokens.cornerRadiusLarge
+                color: tokens.surface
+                border.color: tokens.border
+                border.width: 1
+
+                ColumnLayout {
+                    id: archiveColumn
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.margins: tokens.spacingLarge
+                    spacing: tokens.spacingSmall
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: tokens.spacingTiny
+                            Label {
+                                text: qsTr("原始语音临时留存")
+                                color: tokens.textPrimary
+                                font.pixelSize: tokens.fontSizeTitle
+                                font.bold: true
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                text: qsTr("可选保存遥控器原始录音，仅保存在本机；每条录音在结束 4 小时后自动删除。开启或关闭后需重启桥接。")
+                                color: tokens.textSecondary
+                                font.pixelSize: tokens.fontSizeSmall
+                            }
+                        }
+                        Switch {
+                            objectName: "voiceArchiveSwitch"
+                            checked: SettingsController.voiceArchiveEnabled
+                            onToggled: SettingsController.voiceArchiveEnabled = checked
+                        }
+                        Button { text: qsTr("刷新"); onClicked: SettingsController.refreshVoiceArchive() }
+                        Button { text: qsTr("打开文件夹"); onClicked: SettingsController.openVoiceArchiveFolder() }
+                        Button {
+                            text: qsTr("全部删除")
+                            enabled: SettingsController.voiceArchiveSessions.length > 0
+                            onClicked: clearArchiveDialog.open()
+                        }
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        visible: SettingsController.voiceArchiveSessions.length === 0
+                        text: SettingsController.voiceArchiveEnabled
+                            ? qsTr("尚无留存录音。按住语音键说话后，再点击刷新。")
+                            : qsTr("当前未开启原始语音留存。")
+                        color: tokens.textSecondary
+                        font.pixelSize: tokens.fontSizeSmall
+                    }
+
+                    Repeater {
+                        model: SettingsController.voiceArchiveSessions
+                        delegate: Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            implicitHeight: sessionRow.implicitHeight + tokens.spacingSmall * 2
+                            radius: tokens.cornerRadiusSmall
+                            color: tokens.fieldBackground
+                            RowLayout {
+                                id: sessionRow
+                                anchors.fill: parent
+                                anchors.margins: tokens.spacingSmall
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: modelData.startedAt
+                                    color: tokens.textPrimary
+                                }
+                                Label { text: modelData.durationText; color: tokens.accent }
+                                Label {
+                                    visible: modelData.droppedChunks > 0
+                                    text: qsTr("部分音频未写入")
+                                    color: tokens.errorColor
+                                    font.pixelSize: tokens.fontSizeSmall
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
                 implicitHeight: privacyText.implicitHeight + tokens.spacingMedium * 2
                 radius: tokens.cornerRadiusSmall
                 color: tokens.fieldBackground
@@ -265,7 +365,9 @@ Item {
                     anchors.fill: parent
                     anchors.margins: tokens.spacingMedium
                     wrapMode: Text.WordWrap
-                    text: qsTr("隐私说明：只保存每天累计的按键次数、语音会话次数和语音时长；不保存音频、转写文字、应用名称或设备标识。")
+                    text: SettingsController.voiceArchiveEnabled
+                        ? qsTr("隐私说明：使用统计不包含转写文字、应用名称或设备标识；你已主动开启原始语音临时留存，录音只在本机保存并在 4 小时后删除。")
+                        : qsTr("隐私说明：只保存每天累计的按键次数、语音会话次数和语音时长；默认不保存音频、转写文字、应用名称或设备标识。")
                     color: tokens.textSecondary
                     font.pixelSize: tokens.fontSizeSmall
                 }

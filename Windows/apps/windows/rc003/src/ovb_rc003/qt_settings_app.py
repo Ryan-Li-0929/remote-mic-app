@@ -113,10 +113,12 @@ from . import (
     remote_layout,
     raw_input_windows,
     resources,
+    runtime_status,
     settings_ui,
     shell_targets,
     usage_statistics,
     vb_cable_bundle,
+    voice_audio_archive,
     windows_diagnostics,
 )
 
@@ -391,8 +393,10 @@ def _load_qt_classes() -> dict:
             Property,
             QAbstractListModel,
             QByteArray,
+            QCoreApplication,
             QModelIndex,
             QObject,
+            QTimer,
             Qt,
             QUrl,
             Signal,
@@ -655,6 +659,10 @@ def _load_qt_classes() -> dict:
         djiMicStatusTextChanged = Signal()
         keyDetectionActiveChanged = Signal()
         keyDetectionTextChanged = Signal()
+        voiceLevelChanged = Signal()
+        voiceActiveChanged = Signal()
+        voiceArchiveEnabledChanged = Signal()
+        voiceArchiveSessionsChanged = Signal()
         _rawKeyDetected = Signal(str, str)
         hotkeyCaptured = Signal(str)
         hotkeyCaptureError = Signal(str)
@@ -712,6 +720,22 @@ def _load_qt_classes() -> dict:
             self._rawKeyDetected.connect(self._on_raw_key_detected)
             self._hotkey_capture = None
             self._hotkeyCaptureResult.connect(self._on_hotkey_capture_result)
+            self._voice_level = 0.0
+            self._voice_active = False
+            self._voice_archive_enabled = bool(
+                self._config.get("retain_voice_audio", False)
+            )
+            self._voice_archive_sessions: List[dict] = []
+            try:
+                self._runtime_status_channel = runtime_status.RuntimeStatusChannel()
+            except Exception:
+                self._runtime_status_channel = None
+            self._runtime_status_timer = QTimer(self)
+            self._runtime_status_timer.setInterval(50)
+            self._runtime_status_timer.timeout.connect(self._refresh_voice_runtime_status)
+            if QCoreApplication.instance() is not None:
+                self._runtime_status_timer.start()
+            self._refresh_voice_archive_sessions()
 
             self._endpoint_options: List[str] = []
             self._endpoint_choices: List[audio_output.AudioEndpoint] = []
@@ -722,6 +746,44 @@ def _load_qt_classes() -> dict:
             self._model.set_selected_button(self._selected_button_id)
 
         # -- internal helpers -------------------------------------------------
+
+        def _refresh_voice_runtime_status(self) -> None:
+            channel = self._runtime_status_channel
+            status = (
+                channel.read()
+                if channel is not None
+                else runtime_status.VoiceRuntimeStatus()
+            )
+            if abs(status.level - self._voice_level) >= 0.005:
+                self._voice_level = status.level
+                self.voiceLevelChanged.emit()
+            if status.active != self._voice_active:
+                self._voice_active = status.active
+                self.voiceActiveChanged.emit()
+
+        def _refresh_voice_archive_sessions(self) -> None:
+            records = voice_audio_archive.list_sessions(
+                voice_audio_archive.archive_root(self._config_root)
+            )
+            display = []
+            for record in records:
+                try:
+                    started = str(record["started_at"])[0:19].replace("T", " ")
+                    duration = max(0.0, float(record.get("duration_seconds", 0.0)))
+                    display.append(
+                        {
+                            "sessionId": str(record.get("session_id", "")),
+                            "startedAt": started + " UTC",
+                            "durationText": f"{duration:.1f} 秒",
+                            "audioPath": str(record["audio_path"]),
+                            "droppedChunks": int(record.get("dropped_chunks", 0)),
+                        }
+                    )
+                except (KeyError, TypeError, ValueError):
+                    continue
+            if display != self._voice_archive_sessions:
+                self._voice_archive_sessions = display
+                self.voiceArchiveSessionsChanged.emit()
 
         def _refresh_endpoint_options(self) -> None:
             try:
@@ -1188,6 +1250,59 @@ def _load_qt_classes() -> dict:
             notify=keyDetectionTextChanged,
         )
 
+        def _get_voice_level(self) -> float:
+            return self._voice_level
+
+        voiceLevel = Property(float, _get_voice_level, notify=voiceLevelChanged)
+
+        def _get_voice_active(self) -> bool:
+            return self._voice_active
+
+        voiceActive = Property(bool, _get_voice_active, notify=voiceActiveChanged)
+
+        def _get_voice_archive_enabled(self) -> bool:
+            return self._voice_archive_enabled
+
+        def _set_voice_archive_enabled(self, value: bool) -> None:
+            value = bool(value)
+            if value == self._voice_archive_enabled:
+                return
+            updated = dict(self._config)
+            updated["retain_voice_audio"] = value
+            path = config.config_path(self._config_root)
+            try:
+                config.save_config(path, updated)
+                self._config = config.load_config(path)
+            except Exception as exc:  # noqa: BLE001 - report through UI
+                self._set_error_message(f"无法保存语音留存设置：{exc}")
+                return
+            self._voice_archive_enabled = bool(
+                self._config.get("retain_voice_audio", False)
+            )
+            self.voiceArchiveEnabledChanged.emit()
+            self._set_error_message("")
+            self._set_status_message(
+                "原始语音临时留存已开启；重启桥接后生效，文件将在 4 小时后自动删除。"
+                if self._voice_archive_enabled
+                else "原始语音临时留存已关闭；重启桥接后不再创建新文件。"
+            )
+
+        voiceArchiveEnabled = Property(
+            bool,
+            _get_voice_archive_enabled,
+            _set_voice_archive_enabled,
+            notify=voiceArchiveEnabledChanged,
+        )
+
+        def _get_voice_archive_sessions(self) -> List[dict]:
+            return list(self._voice_archive_sessions)
+
+        voiceArchiveSessions = Property(
+            list,
+            _get_voice_archive_sessions,
+            notify=voiceArchiveSessionsChanged,
+        )
+
         def _get_dji_control_rows(self) -> List[dict]:
             return [
                 {
@@ -1316,6 +1431,35 @@ def _load_qt_classes() -> dict:
             if self._key_detection_active:
                 self._key_detection_active = False
                 self.keyDetectionActiveChanged.emit()
+
+        @Slot()
+        def closeRuntimeStatus(self) -> None:
+            self._runtime_status_timer.stop()
+            channel = self._runtime_status_channel
+            self._runtime_status_channel = None
+            if channel is not None:
+                channel.close()
+
+        @Slot()
+        def refreshVoiceArchive(self) -> None:
+            self._refresh_voice_archive_sessions()
+
+        @Slot()
+        def openVoiceArchiveFolder(self) -> None:
+            root = voice_audio_archive.archive_root(self._config_root)
+            root.mkdir(parents=True, exist_ok=True)
+            result = shell_targets.open_external_target(str(root))
+            if result.outcome is shell_targets.ExternalTargetOutcome.OPEN_FAILED:
+                self._set_error_message(f"无法打开语音文件夹：{result.error}")
+
+        @Slot()
+        def clearVoiceArchive(self) -> None:
+            root = voice_audio_archive.archive_root(self._config_root)
+            for pattern in ("*.wav", "*.json", "*.partial.wav", "*.json.tmp"):
+                for path in root.glob(pattern):
+                    path.unlink(missing_ok=True)
+            self._refresh_voice_archive_sessions()
+            self._set_status_message("已删除当前保存的原始语音。")
 
         @Slot()
         def saveAndLaunch(self) -> None:
@@ -2012,6 +2156,7 @@ def run_settings_window() -> int:
 
         return app.exec()
     finally:
+        controller.closeRuntimeStatus()
         controller.stopHotkeyCapture()
         controller.stopKeyDetection()
         # XRBM-035: called HERE, synchronously - whether app.exec()
